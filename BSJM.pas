@@ -1,0 +1,117 @@
+{
+AUTHOR：JACOB.MI
+CREATED DATE: 2025.1.3
+
+VERSION 1.0- 2025.6.14
+重新命名+增加5日/20日交叉EMA
+VERSION 0.9- 2025.4.14
+二次确认提前一些
+VERSION 0.8 - 2025.3.15
+二次确认条件放宽一点点，MACD只要在0.5下都算
+VERSION 0.7 - 2025.3.5
+KD开口值放大一丢丢，让反应更灵敏，从而使当前买点略提前细一级买点反应
+VERSION 0.6 - 2025.2.25
+增加多次买卖确认
+VERSION 0.5 - 2025.1.8
+简化MACD斜率算法，增加DEA判断
+VERSION 0.4 - 2025.1.6
+略微调整的不敏感些，把KD差缩小到5以内才出现买卖点
+VERSION 0.3 - 2025.1.5
+卖点也由KDJ+MACD决定
+
+
+## BUY & SELL POINTS, FOR FUTUBULL FUNCTIONS
+### 本策略是基于KDJ，KC和MACD三个技术指标交叉参考而成。
+### 买点：KDJ和MACD同时满足，且低于KC的下轨
+### 卖点：KDJ和MACD同时满足，且高于KC的上轨
+### 警示点：KDJ和MACD同时满足，且不高于KC的上轨。大概率会延续趋势，小概率反转
+
+}
+
+{KDJ买优化,采用9日的均线}
+RSV := (CLOSE - LLV(LOW, P1)) / (HHV(HIGH, P1) - LLV(LOW, P1)) * 100;
+
+K := SMA(RSV, P2, 1);
+D := SMA(K, P3, 1);
+J := 3 * K - 2 * D;
+
+LAST_RSV := (REF(CLOSE, 1) - LLV(REF(LOW, 1), P1)) / (HHV(REF(HIGH, 1), P1) - LLV(REF(LOW, 1), P1)) * 100;
+
+LAST_K := SMA(LAST_RSV, P2, 1);
+LAST_D := SMA(LAST_K, P3, 1);
+LAST_J := 3 * LAST_K - 2 * LAST_D;
+
+{KDJ
+开口缩小: (LAST_K-LAST_D) - (K-D) > -5 ,
+足够小: K-D<10 AND K-D>0 
+K高位:65
+J下降:J< HHV(J,P1) }
+KD_OPEN := 20;
+
+COND_BUY_KDJ := (K - D) - (LAST_K - LAST_D) > -3 AND LAST_J < J AND K - D < KD_OPEN AND D - K < KD_OPEN AND J > LLV(J, P2) AND K < 30;
+
+COND_BUY2_KDJ := (K - D) - (LAST_K - LAST_D) > -3 AND LAST_J < J AND K - D < KD_OPEN AND D - K < KD_OPEN AND K < 50 AND LLV(J, P2) < 10;
+
+{KDJ卖点}
+COND_SELL_KDJ := (LAST_K - LAST_D) - (K - D) > -3 AND LAST_J > J AND D - K < KD_OPEN AND K - D < KD_OPEN AND J < HHV(J, P2) AND K > 65;
+
+COND_SELL2_KDJ := (LAST_K - LAST_D) - (K - D) > -3 AND LAST_J > J AND D - K < KD_OPEN AND K - D < KD_OPEN AND K > 50 AND HHV(J, P2) > 90 ;
+
+{拿到KC高区}
+ML := EMA(CLOSE, K1);
+TR1 := MAX(MAX((HIGH - LOW), ABS(REF(CLOSE, 1) - HIGH)), ABS(REF(CLOSE, 1) - LOW));
+ATR1 := MA(TR1, M1);
+
+{KC区间线}
+UB := ML + 2 * ATR1;
+EUB := ML + 3.8 * ATR1;
+LB := ML - 2 * ATR1;
+ELB := ML - 3.5 * ATR1;
+
+{拿到MACD}
+DIF := EMA(CLOSE, SHORT) - EMA(CLOSE, LONG);
+DEA := EMA(DIF, M2);
+MACD := (DIF - DEA) * 2;
+MACD_OPEN := 0.5;
+
+LAST_DIF := EMA(REF(CLOSE, 1), SHORT) - EMA(REF(CLOSE, 1), LONG);
+LAST_DEA := EMA(LAST_DIF, M2);
+LAST_MACD := (LAST_DIF - LAST_DEA) * 2;
+
+LAST2_DIF := EMA(REF(CLOSE, 2), SHORT) - EMA(REF(CLOSE, 2), LONG);
+LAST2_DEA := EMA(LAST2_DIF, M2);
+LAST2_MACD := (LAST2_DIF - LAST2_DEA) * 2;
+
+{MACD收敛，即斜率 >0:继续发散 <0.08:开始收敛 <-0.15 准备金叉}
+COND_GRADIENT := (MACD - LAST_MACD) / MACD;
+
+{MACD买点：MACD收敛+准备金叉}
+COND_BUY_MACD := IF(MACD < 0, COND_GRADIENT < 0.08, 1) AND DEA < 0;
+
+{买点: 满足KDJ，MACD，低于KC}
+COND1 := COND_BUY_KDJ AND COND_BUY_MACD AND LOW < LB AND LOW > ELB AND MACD < 0;
+{低价买点：满足KDJ，MACD，远低于KC}
+COND10 := COND_BUY_KDJ AND LOW < ELB ;
+{二次买点：满足KDJ，MACD，高于KC}
+COND11 := COND_BUY2_KDJ AND MACD > 0 AND DEA < 0 AND LAST_MACD > -1 * MACD_OPEN AND LAST2_MACD > -1 * MACD_OPEN;
+
+{MACD卖点：MACD收敛}
+COND_SELL_MACD := IF(MACD > 0, COND_GRADIENT < 0.08, 1) AND DEA > 0;
+
+{卖点：满足KDJ，MACD，高于KC}
+COND2 := COND_SELL_KDJ AND COND_SELL_MACD AND HIGH > UB AND HIGH < EUB AND MACD > 0;
+{高价卖点：满足KDJ，MACD，远高于KC}
+COND20 := COND_SELL_KDJ AND HIGH > EUB;
+{二次卖点：满足KDJ，MACD，高于KC}
+COND21 := COND_SELL2_KDJ AND MACD < 0 AND  DEA > 0 AND LAST_MACD < MACD_OPEN AND LAST2_MACD < MACD_OPEN;
+
+
+{买点}
+买点 : DRAWICON(COND1, IF(LOW < LB, LOW, LB) - ATR1, 7);
+低价买点 : DRAWICON(COND10, IF(LOW < LB, LOW, LB) - ATR1 * 0.7, 23);
+二次买点 : DRAWICON(COND11, IF(LOW < LB, LOW, LB), 15);
+
+{卖点}
+卖点 : DRAWICON(COND2, IF(HIGH > UB, HIGH, UB) + ATR1 * 0.8, 8);
+高价卖点 : DRAWICON(COND20, IF(HIGH > UB, HIGH, UB) + ATR1 * 0.8, 9);
+二次卖点 : DRAWICON(COND21, IF(HIGH > UB, HIGH, UB) + ATR1 * 1, 15);
